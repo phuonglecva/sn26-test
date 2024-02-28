@@ -243,6 +243,10 @@ class StableValidator:
         self.background_timer.daemon = True
         self.background_timer.start()
 
+        # Create a Dict for storing miner query histroy
+        self.miner_query_history_time = {self.metagraph.axons[uid].hotkey:float('inf') for uid in range(self.metagraph.n.item())}
+        self.miner_query_history_count = {self.metagraph.axons[uid].hotkey:0 for uid in range(self.metagraph.n.item())}
+
 
     async def run(self):
         # Main Validation Loop
@@ -262,6 +266,9 @@ class StableValidator:
                 # Get a random number of uids
                 uids = await get_random_uids(self, self.dendrite, k=N_NEURONS)
                 uids = uids.to(self.device)
+                
+                for uid in uids: self.miner_query_history_time[self.metagraph.axons[uid].hotkey] = time.perf_counter() 
+                for uid in uids: self.miner_query_history_count[self.metagraph.axons[uid].hotkey] += 1
 
                 axons = [self.metagraph.axons[uid] for uid in uids]
 
