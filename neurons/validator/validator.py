@@ -244,7 +244,7 @@ class StableValidator:
         self.background_timer.start()
 
         # Create a Dict for storing miner query histroy
-        self.miner_query_history_time = {self.metagraph.axons[uid].hotkey:float('inf') for uid in range(self.metagraph.n.item())}
+        self.miner_query_history_duration = {self.metagraph.axons[uid].hotkey:float('inf') for uid in range(self.metagraph.n.item())}
         self.miner_query_history_count = {self.metagraph.axons[uid].hotkey:0 for uid in range(self.metagraph.n.item())}
 
 
@@ -266,9 +266,6 @@ class StableValidator:
                 # Get a random number of uids
                 uids = await get_random_uids(self, self.dendrite, k=N_NEURONS)
                 uids = uids.to(self.device)
-                
-                for uid in uids: self.miner_query_history_time[self.metagraph.axons[uid].hotkey] = time.perf_counter() 
-                for uid in uids: self.miner_query_history_count[self.metagraph.axons[uid].hotkey] += 1
 
                 axons = [self.metagraph.axons[uid] for uid in uids]
 
@@ -469,6 +466,16 @@ class StableValidator:
                 prefix="Saved model",
                 sufix=f"<blue>{ self.config.alchemy.full_path }/model.torch</blue>",
             )
+            torch.save(self.miner_query_history_duration, f"{self.config.alchemy.full_path}/history_duration.torch")
+            bt.logging.success(
+                prefix="Saved model",
+                sufix=f"<blue>{ self.config.alchemy.full_path }/history_duration.torch</blue>",
+            )
+            torch.save(self.miner_query_history_count, f"{self.config.alchemy.full_path}/history_count.torch")
+            bt.logging.success(
+                prefix="Saved model",
+                sufix=f"<blue>{ self.config.alchemy.full_path }/history_count.torch</blue>",
+            )
         except Exception as e:
             bt.logging.warning(f"Failed to save model with error: {e}")
 
@@ -511,6 +518,31 @@ class StableValidator:
                 prefix="Reloaded model",
                 sufix=f"<blue>{ self.config.alchemy.full_path }/model.torch</blue>",
             )
+            
+            if os.path.isfile(f"{self.config.alchemy.full_path}/history_duration.torch)"):
+                # Load saved history duration dict
+                breakpoint()
+                history_duration_dict = torch.load(f"{self.config.alchemy.full_path}/history_duration.torch")
+                for key in self.miner_query_history_duration.keys():
+                    self.miner_query_history_duration[key] = history_duration_dict[key]
+
+                bt.logging.success(
+                    prefix="Reloaded model",
+                    sufix=f"<blue>{ self.config.alchemy.full_path }/history_duration.torch</blue>",
+                )
+
+            if os.path.isfile(f"{self.config.alchemy.full_path}/history_count.torch"):
+            # Load saved history count dict
+
+                history_count_dict = torch.load(f"{self.config.alchemy.full_path}/history_count.torch")
+                for key in self.miner_query_history_count.keys():
+                    self.miner_query_history_count[key] = history_count_dict[key]
+
+                bt.logging.success(
+                    prefix="Reloaded model",
+                    sufix=f"<blue>{ self.config.alchemy.full_path }/history_count.torch</blue>",
+                )
+
         except Exception as e:
             bt.logging.warning(f"Failed to load model with error: {e}")
 

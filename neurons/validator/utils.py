@@ -108,6 +108,7 @@ async def get_random_uids(
     candidate_uids = []
     avail_uids = []
 
+    # Filter for only serving miners 
     for uid in range(self.metagraph.n.item()):
         uid_is_available = check_uid_availability(
             dendrite, self.metagraph, uid, VPERMIT_TAO
@@ -122,8 +123,11 @@ async def get_random_uids(
             if uid_is_not_excluded:
                 candidate_uids.append(uid)
     
+    # Sort candidate UIDs by their count history
+    # This prioritises miners that have been queried less than average
     candidate_uids = [i for i,_ in sorted(zip(candidate_uids, [self.miner_query_history_count[self.metagraph.axons[uid].hotkey] for uid in candidate_uids]))]
     
+    # Find the first K uids that respond with IsAlive
     final_uids = []
     for uid in range(0,len(candidate_uids), k): 
         tasks = []

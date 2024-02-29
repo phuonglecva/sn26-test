@@ -80,6 +80,12 @@ def run_step(self, prompt, axons, uids, task_type="text_to_image", image=None):
         )
     )
 
+    # Log query to hisotry
+    for uid in uids: self.miner_query_history_duration[self.metagraph.axons[uid].hotkey] = time.perf_counter() 
+    for uid in uids: self.miner_query_history_count[self.metagraph.axons[uid].hotkey] += 1
+    bt.logging.info(self.miner_query_history_duration)
+    bt.logging.info(self.miner_query_history_count)
+
     responses_empty_flag = [1 if not response.images else 0 for response in responses]
     sorted_index = [
         item[0]
