@@ -129,7 +129,7 @@ async def get_random_uids(
     
     # Find the first K uids that respond with IsAlive
     final_uids = []
-    for uid in range(0,len(candidate_uids), k): 
+    for uid in range(0,len(candidate_uids), int(k*1.5)): 
         tasks = []
 
         for u in candidate_uids[uid:uid+k]:
@@ -159,8 +159,8 @@ async def get_random_uids(
     bt.logging.trace({f"UID_{candidate_uid}": "Active" if candidate_uid in final_uids else "Inactive" for i, candidate_uid in enumerate(candidate_uids)})
 
     # Check if candidate_uids contain enough for querying, if not grab all available uids
-    available_uids = candidate_uids
-    if len(candidate_uids) < k:
+    available_uids = final_uids
+    if len(available_uids) < k:
         uids = torch.tensor(available_uids)
     else:
         uids = torch.tensor(random.sample(available_uids, k))
