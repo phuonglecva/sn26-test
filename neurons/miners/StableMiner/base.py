@@ -110,7 +110,7 @@ class BaseMiner(ABC):
                 wallet=self.wallet,
                 ip=bt.utils.networking.get_external_ip(),
                 external_ip=bt.utils.networking.get_external_ip(),
-                config=self.config
+                config=self.config,
             )
             .attach(
                 forward_fn=self.is_alive,
@@ -129,10 +129,10 @@ class BaseMiner(ABC):
         self.subtensor.serve_axon(axon=self.axon, netuid=self.config.netuid)
 
     def get_args(self) -> Dict:
-        return {
-            "guidance_scale": 7.5,
-            "num_inference_steps": 50,
-        }, {"guidance_scale": 5, "strength": 0.6}
+        return (
+            {"guidance_scale": 7.5, "num_inference_steps": 50,},
+            {"guidance_scale": 5, "strength": 0.6},
+        )
 
     def get_config(self) -> "bt.config":
         argp = argparse.ArgumentParser(description="Miner Configs")
@@ -272,7 +272,9 @@ class BaseMiner(ABC):
             if synapse.negative_prompt:
                 local_args["negative_prompt"] = [synapse.negative_prompt]
         except:
-            bt.logging.info("Values for guidance_scale or negative_prompt were not provided.")
+            bt.logging.info(
+                "Values for guidance_scale or negative_prompt were not provided."
+            )
 
         try:
             local_args["num_inference_steps"] = synapse.steps
@@ -298,7 +300,7 @@ class BaseMiner(ABC):
                     torch.Generator(device=self.config.miner.device).manual_seed(seed)
                 ]
                 images = model(**local_args).images
-                
+
                 synapse.images = [
                     bt.Tensor.serialize(self.transform(image)) for image in images
                 ]

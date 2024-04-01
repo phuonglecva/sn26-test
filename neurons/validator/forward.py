@@ -20,6 +20,7 @@ import wandb
 transform = T.Compose([T.PILToTensor()])
 
 
+# NOTE: self(StableValidator)
 def run_step(self, prompt, axons, uids, task_type="text_to_image", image=None):
     time_elapsed = datetime.now() - self.stats.start_time
 
@@ -32,7 +33,7 @@ def run_step(self, prompt, axons, uids, task_type="text_to_image", image=None):
         color_key="c",
     )
 
-    ### Set seed to -1 so miners will use a random seed by default
+    # Set seed to -1 so miners will use a random seed by default
     synapse = (
         ImageGeneration(
             generation_type=task_type,
@@ -53,6 +54,43 @@ def run_step(self, prompt, axons, uids, task_type="text_to_image", image=None):
         color_key="y",
     )
 
+    # Communicate with each axon, sending the image generation request
+    responses = self.loop.run_until_complete(
+        self.dendrite(
+            axons,
+            synapse,
+            timeout=self.query_timeout,
+        )
+    )
+
+    # Log query to hisotry
+    try:
+        for uid in uids:
+            hotkey = self.metagraph.axons[uid].hotkey
+
+            self.miner_query_history_count[hotkey] += 1
+            self.miner_query_history_duration[hotkey] = time.perf_counter()
+
+    except Exception as e:
+        bt.logging.info(f"Failed to log miner counts and histories {repr(e)}")
+
+    miner_values = self.miner_query_history_count.values()
+    output_log(
+        f"{sh('Miner Counts')} -> Max: {max():.2f} | Min: {min(miner_values):.2f} | Mean: {sum(miner_values) / len(miner_values):.2f}",
+        color_key="y",
+    )
+
+    responses_empty_flag = [1 if not response.images else 0 for response in responses]
+    sorted_index = [
+        item[0]
+        for item in sorted(
+            list(zip(range(0, len(responses_empty_flag)), responses_empty_flag)),
+            key=lambda x: x[1],
+        )
+    ]
+    uids = torch.tensor([uids[index] for index in sorted_index]).to(self.device)
+    responses = [responses[index] for index in sorted_index]
+
     synapse_dict = {
         k: v
         for k, v in synapse.__dict__.items()
@@ -67,37 +105,6 @@ def run_step(self, prompt, axons, uids, task_type="text_to_image", image=None):
         f"{k.capitalize()}: {f'{v:.2f}' if isinstance(v, float) else v}"
         for k, v in synapse_dict.items()
     ]
-
-    responses = self.loop.run_until_complete(
-        self.dendrite(
-            axons,
-            synapse,
-            timeout=self.query_timeout,
-        )
-    )
-
-    # Log query to hisotry
-    try:
-        for uid in uids: self.miner_query_history_duration[self.metagraph.axons[uid].hotkey] = time.perf_counter() 
-        for uid in uids: self.miner_query_history_count[self.metagraph.axons[uid].hotkey] += 1
-    except:
-        bt.logging.info("Failed to log miner counts and histories")
-
-    output_log(
-        f"{sh('Miner Counts')} -> Max: {max(self.miner_query_history_count.values()):.2f} | Min: {min(self.miner_query_history_count.values()):.2f} | Mean: {sum(self.miner_query_history_count.values()) / len(self.miner_query_history_count.values()):.2f}",
-        color_key="y",
-    )
-
-    responses_empty_flag = [1 if not response.images else 0 for response in responses]
-    sorted_index = [
-        item[0]
-        for item in sorted(
-            list(zip(range(0, len(responses_empty_flag)), responses_empty_flag)),
-            key=lambda x: x[1],
-        )
-    ]
-    uids = torch.tensor([uids[index] for index in sorted_index]).to(self.device)
-    responses = [responses[index] for index in sorted_index]
 
     output_log(f"{sh('Info')} -> {' | '.join(args_list)}", color_key="m")
     output_log(
@@ -115,11 +122,27 @@ def run_step(self, prompt, axons, uids, task_type="text_to_image", image=None):
     event = {"task_type": task_type}
 
     start_time = time.time()
-    
+
     # Log the results for monitoring purposes.
     try:
-        formatted_responses = [{'negative_prompt':response.negative_prompt, 'prompt_image': response.prompt_image, 'num_images_per_prompt': response.num_images_per_prompt, 'height': response.height, 'width': response.width, 'seed': response.seed, 'steps': response.steps, 'guidance_scale': response.guidance_scale, 'generation_type': response.generation_type,'images':[image.shape for image in response.images]} for response in responses]
-        bt.logging.info(f"Received {len(responses)} response(s) for the prompt '{prompt}': {formatted_responses}")
+        formatted_responses = [
+            {
+                "negative_prompt": response.negative_prompt,
+                "prompt_image": response.prompt_image,
+                "num_images_per_prompt": response.num_images_per_prompt,
+                "height": response.height,
+                "width": response.width,
+                "seed": response.seed,
+                "steps": response.steps,
+                "guidance_scale": response.guidance_scale,
+                "generation_type": response.generation_type,
+                "images": [image.shape for image in response.images],
+            }
+            for response in responses
+        ]
+        bt.logging.info(
+            f"Received {len(responses)} response(s) for the prompt '{prompt}': {formatted_responses}"
+        )
     except Exception as e:
         bt.logging.warning(f"Failed to log formatted responses: {e}")
 
@@ -146,6 +169,7 @@ def run_step(self, prompt, axons, uids, task_type="text_to_image", image=None):
         event[reward_fn_i.name] = reward_i.tolist()
         event[reward_fn_i.name + "_normalized"] = reward_i_normalized.tolist()
         bt.logging.trace(str(reward_fn_i.name), reward_i_normalized.tolist())
+
     for masking_fn_i in self.masking_functions:
         mask_i, mask_i_normalized = masking_fn_i.apply(responses, rewards)
         rewards *= mask_i_normalized.to(self.device)
@@ -180,9 +204,9 @@ def run_step(self, prompt, axons, uids, task_type="text_to_image", image=None):
                     )
                     break
 
-                ### There is a small possibility that not every miner queried will respond.
-                ### If 12 are queried, but only 10 respond, we need to handle the error if
-                ### the user selects the 11th or 12th image (which don't exist)
+                # There is a small possibility that not every miner queried will respond.
+                # If 12 are queried, but only 10 respond, we need to handle the error if
+                # the user selects the 11th or 12th image (which don't exist)
                 if reward_i >= len(rewards):
                     bt.logging.debug(
                         f"Received invalid vote for Image {reward_i+1}: it doesn't exist."
@@ -191,7 +215,7 @@ def run_step(self, prompt, axons, uids, task_type="text_to_image", image=None):
 
                 bt.logging.info(f"Received manual vote for Image {reward_i+1}")
 
-                ### Set to true so we don't normalize the rewards later
+                # Set to true so we don't normalize the rewards later
                 received_vote = True
 
                 reward_i_normalized: torch.FloatTensor = torch.zeros(
@@ -201,9 +225,9 @@ def run_step(self, prompt, axons, uids, task_type="text_to_image", image=None):
                 rewards += self.reward_weights[-1] * reward_i_normalized.to(self.device)
                 if not self.config.alchemy.disable_log_rewards:
                     event["human_reward_model"] = reward_i_normalized.tolist()
-                    event["human_reward_model_normalized"] = (
-                        reward_i_normalized.tolist()
-                    )
+                    event[
+                        "human_reward_model_normalized"
+                    ] = reward_i_normalized.tolist()
 
                 break
 
@@ -231,9 +255,10 @@ def run_step(self, prompt, axons, uids, task_type="text_to_image", image=None):
     )
 
     try:
-
         for i, average in enumerate(self.moving_averaged_scores):
-            if (self.metagraph.axons[i].hotkey in self.hotkey_blacklist) or (self.metagraph.axons[i].coldkey in self.coldkey_blacklist):
+            if (self.metagraph.axons[i].hotkey in self.hotkey_blacklist) or (
+                self.metagraph.axons[i].coldkey in self.coldkey_blacklist
+            ):
                 self.moving_averaged_scores[i] = 0
 
     except Exception as e:
@@ -292,6 +317,8 @@ def run_step(self, prompt, axons, uids, task_type="text_to_image", image=None):
         self.wandb.log(asdict(wandb_event))
         bt.logging.debug("Logged event to wandb.")
     except Exception as e:
-        bt.logging.debug(f"Unable to log event to wandb due to the following error: {e}")
+        bt.logging.debug(
+            f"Unable to log event to wandb due to the following error: {e}"
+        )
 
     return event
