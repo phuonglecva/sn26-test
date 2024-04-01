@@ -53,7 +53,7 @@ class StableValidator:
     @classmethod
     def config(cls):
         return config(cls)
-    
+
     def loop_until_registered(self):
         index = None
         while True:
@@ -79,6 +79,8 @@ class StableValidator:
         self.config = StableValidator.config()
         self.check_config(self.config)
         bt.logging(config=self.config, logging_dir=self.config.alchemy.full_path)
+
+        self.latencies = {}
 
         # Init device.
         self.device = torch.device(self.config.alchemy.device)
@@ -136,7 +138,6 @@ class StableValidator:
             #### Wait until the miner is registered
             self.loop_until_registered()
 
-
         self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
         bt.logging.debug("Loaded metagraph")
 
@@ -169,13 +170,16 @@ class StableValidator:
         # Init manual validator
         if not self.config.alchemy.disable_manual_validator:
             try:
-                if 'ImageAlchemy' not in os.getcwd():
-                    raise Exception("Unable to load manual validator please cd into the ImageAlchemy folder before running the validator")
+                if "ImageAlchemy" not in os.getcwd():
+                    raise Exception(
+                        "Unable to load manual validator please cd into the ImageAlchemy folder before running the validator"
+                    )
                 bt.logging.debug("Setting streamlit credentials")
-                if not os.path.exists('streamlit_credentials.txt'):
+                if not os.path.exists("streamlit_credentials.txt"):
                     username = self.wallet.hotkey.ss58_address
                     password = pwgenerator.generate()
-                    with open('streamlit_credentials.txt', 'w') as f: f.write(f"username={username}\npassword={password}")
+                    with open("streamlit_credentials.txt", "w") as f:
+                        f.write(f"username={username}\npassword={password}")
                     # Sleep until the credentials file is written
                     sleep(5)
                 bt.logging.debug("Loading Manual Validator")
@@ -184,8 +188,12 @@ class StableValidator:
                         "streamlit",
                         "run",
                         os.path.join(os.getcwd(), "neurons", "validator", "app.py"),
-                        "--server.port" if self.config.alchemy.streamlit_port is not None else "", 
-                        f"{self.config.alchemy.streamlit_port}" if self.config.alchemy.streamlit_port is not None else ""
+                        "--server.port"
+                        if self.config.alchemy.streamlit_port is not None
+                        else "",
+                        f"{self.config.alchemy.streamlit_port}"
+                        if self.config.alchemy.streamlit_port is not None
+                        else "",
                     ]
                 )
             except Exception as e:
@@ -196,12 +204,14 @@ class StableValidator:
         self.reward_weights = torch.tensor(
             [
                 1.0,
-                1/3 if not self.config.alchemy.disable_manual_validator else 0.0,
+                1 / 3 if not self.config.alchemy.disable_manual_validator else 0.0,
             ],
             dtype=torch.float32,
         ).to(self.device)
 
-        self.reward_weights = self.reward_weights / self.reward_weights.sum(dim=-1).unsqueeze(-1)
+        self.reward_weights = self.reward_weights / self.reward_weights.sum(
+            dim=-1
+        ).unsqueeze(-1)
 
         self.reward_names = ["image_reward_model", "manual_reward_model"]
 
@@ -254,15 +264,24 @@ class StableValidator:
 
         # Create a Dict for storing miner query history
         try:
-            self.miner_query_history_duration = {self.metagraph.axons[uid].hotkey:float('inf') for uid in range(self.metagraph.n.item())}
+            self.miner_query_history_duration = {
+                self.metagraph.axons[uid].hotkey: float("inf")
+                for uid in range(self.metagraph.n.item())
+            }
         except:
             pass
         try:
-            self.miner_query_history_count = {self.metagraph.axons[uid].hotkey:0 for uid in range(self.metagraph.n.item())}
+            self.miner_query_history_count = {
+                self.metagraph.axons[uid].hotkey: 0
+                for uid in range(self.metagraph.n.item())
+            }
         except:
             pass
         try:
-            self.miner_query_history_fail_count = {self.metagraph.axons[uid].hotkey:0 for uid in range(self.metagraph.n.item())}
+            self.miner_query_history_fail_count = {
+                self.metagraph.axons[uid].hotkey: 0
+                for uid in range(self.metagraph.n.item())
+            }
         except:
             pass
 
@@ -308,7 +327,9 @@ class StableValidator:
                 try:
                     self.sync()
                 except Exception as e:
-                    bt.logging.warning(f"An unexpected error occurred trying to sync the metagraph: {e}")
+                    bt.logging.warning(
+                        f"An unexpected error occurred trying to sync the metagraph: {e}"
+                    )
 
                 # Load Previous Sates
                 self.save_state()
@@ -323,7 +344,9 @@ class StableValidator:
                         reinit_wandb(self)
                         self.wandb_loaded = True
                     except Exception as e:
-                        bt.logging.error(f"An unexpected error occurred reinitializing wandb: {e}")
+                        bt.logging.error(
+                            f"An unexpected error occurred reinitializing wandb: {e}"
+                        )
                         self.wandb_loaded = False
 
             # If we encounter an unexpected error, log it for debugging.
@@ -434,7 +457,7 @@ class StableValidator:
         else:
             # Check if enough epoch blocks have elapsed since the last epoch.
             return (ttl_get_block(self) % self.prev_block) >= self.epoch_length
-        
+
     def save_state(self):
         r"""Save hotkeys, neuron model and moving average scores to filesystem."""
         bt.logging.info("save_state()")
@@ -442,7 +465,9 @@ class StableValidator:
             neuron_state_dict = {
                 "neuron_weights": self.moving_averaged_scores.to("cpu").tolist(),
             }
-            torch.save(neuron_state_dict, f"{self.config.alchemy.full_path}/model.torch")
+            torch.save(
+                neuron_state_dict, f"{self.config.alchemy.full_path}/model.torch"
+            )
             bt.logging.success(
                 prefix="Saved model",
                 sufix=f"<blue>{ self.config.alchemy.full_path }/model.torch</blue>",
@@ -489,15 +514,15 @@ class StableValidator:
                 bt.logging.warning("Loaded MA scores from scratch.")
 
             # Zero out any negative scores
-            for i, average in enumerate(self.moving_averaged_scores): 
-                if average < 0: 
+            for i, average in enumerate(self.moving_averaged_scores):
+                if average < 0:
                     self.moving_averaged_scores[i] = 0
 
             bt.logging.success(
                 prefix="Reloaded model",
                 sufix=f"<blue>{ self.config.alchemy.full_path }/model.torch</blue>",
             )
-            
+
         except Exception as e:
             bt.logging.warning(f"Failed to load model with error: {e}")
 
@@ -510,7 +535,7 @@ class StableValidator:
                 wallet=self.wallet,
                 ip=bt.utils.networking.get_external_ip(),
                 external_ip=bt.utils.networking.get_external_ip(),
-                config=self.config
+                config=self.config,
             )
 
             try:
@@ -526,7 +551,5 @@ class StableValidator:
                 pass
 
         except Exception as e:
-            bt.logging.error(
-                f"Failed to create Axon initialize with exception: {e}"
-            )
+            bt.logging.error(f"Failed to create Axon initialize with exception: {e}")
             pass
